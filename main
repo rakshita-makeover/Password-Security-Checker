@@ -1,0 +1,533 @@
+
+"""
+PASSWORD SECURITY CHECKER
+Ultimate Edition - v6.0.0
+Python standard library only.
+"""
+
+import os
+import re
+import sys
+import string
+import platform
+from datetime import datetime
+
+APP_NAME = "PASSWORD SECURITY CHECKER"
+VERSION = "6.0.0"
+MAX_LENGTH = 256
+
+# ---------- TERMINAL COLORS ----------
+
+class UI:
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    BLUE = "\033[94m"
+    MAGENTA = "\033[95m"
+    CYAN = "\033[96m"
+    WHITE = "\033[97m"
+
+    @classmethod
+    def setup(cls):
+        # Set PSC_NO_COLOR=1 to disable ANSI colors.
+        cls.enabled = (
+            sys.stdout.isatty()
+            and "PSC_NO_COLOR" not in os.environ
+        )
+
+    @classmethod
+    def paint(cls, text, color):
+        if not getattr(cls, "enabled", False):
+            return str(text)
+        return color + str(text) + cls.RESET
+
+
+def line(char="=", width=54, color=UI.CYAN):
+    print(UI.paint(char * width, color))
+
+
+def banner():
+    print(UI.paint(r"""
+ ____   ____   ____ 
+|  _ \ / ___| / ___|
+| |_) | |     \___ \
+|  __/| |___   ___) |
+|_|    \____| |____/
+
+""", UI.CYAN + UI.BOLD if UI.enabled else ""))
+
+    print(UI.paint(APP_NAME, UI.MAGENTA + UI.BOLD))
+    print(UI.paint("ULTIMATE EDITION  |  v" + VERSION, UI.YELLOW))
+    print(UI.paint("LOCAL ANALYSIS • PRIVACY FIRST", UI.GREEN))
+    line()
+
+
+def pause():
+    input("\nPress Enter to continue...")
+
+
+# ---------- PASSWORD ANALYSIS ----------
+
+COMMON_PASSWORDS = {
+    "password", "password123", "123456",
+    "12345678", "123456789", "qwerty",
+    "qwerty123", "admin", "letmein",
+    "welcome", "iloveyou", "abc123",
+    "111111", "000000", "password1",
+    "monkey", "dragon", "football",
+    "baseball", "master", "login",
+}
+
+KEYBOARD_ROWS = (
+    "qwertyuiop",
+    "asdfghjkl",
+    "zxcvbnm",
+    "1234567890",
+    "0987654321",
+    "poiuytrewq",
+    "lkjhgfdsa",
+    "mnbvcxz",
+    "abcdefghijklmnopqrstuvwxyz",
+    "zyxwvutsrqponmlkjihgfedcba",
+    "0123456789",
+    "9876543210",
+)
+
+
+def has_sequence(text, minimum=4):
+    """Detect short, obvious keyboard/alphabet/number sequences."""
+    text = text.lower()
+
+    for row in KEYBOARD_ROWS:
+        for i in range(len(row) - minimum + 1):
+            fragment = row[i:i + minimum]
+            if fragment in text:
+                return True
+
+    return False
+
+
+def analyze_password(password):
+    """
+    Return findings only. The password itself is not returned,
+    saved in the report, or stored in analysis results.
+    """
+    length = len(password)
+    lower = password.lower()
+
+    checks = [
+        ("At least 8 characters", length >= 8),
+        ("At least 12 characters", length >= 12),
+        ("At least 16 characters", length >= 16),
+        ("Uppercase letters", any(c.isupper() for c in password)),
+        ("Lowercase letters", any(c.islower() for c in password)),
+        ("Numbers", any(c.isdigit() for c in password)),
+        (
+            "Symbols",
+            any(not c.isalnum() and not c.isspace()
+                for c in password)
+        ),
+    ]
+
+    warnings = []
+    recommendations = []
+
+    if not password:
+        warnings.append("The input is empty.")
+        recommendations.append("Enter a fictional test password.")
+    else:
+        if length < 12:
+            warnings.append("The password is shorter than 12 characters.")
+            recommendations.append(
+                "Consider a longer, unique passphrase."
+            )
+
+        if lower in COMMON_PASSWORDS:
+            warnings.append("Matches a common-password example.")
+            recommendations.append(
+                "Avoid widely used passwords and predictable variants."
+            )
+
+        if len(set(password)) <= 2 and length >= 4:
+            warnings.append(
+                "The input uses very few distinct characters."
+            )
+            recommendations.append(
+                "Avoid relying on repeated characters."
+            )
+
+        if re.search(r"(.)\1{2,}", password):
+            warnings.append("Contains a run of repeated characters.")
+            recommendations.append(
+                "Avoid obvious repeated-character runs."
+            )
+
+        if has_sequence(password):
+            warnings.append(
+                "Contains a recognizable keyboard or character sequence."
+            )
+            recommendations.append(
+                "Avoid predictable keyboard, alphabet, or number sequences."
+            )
+
+        if password.isspace():
+            warnings.append("The input contains only whitespace.")
+
+        if not any(c.isalpha() for c in password):
+            recommendations.append(
+                "Consider a memorable passphrase with more length."
+            )
+
+    passed = sum(value for _, value in checks)
+
+    # Heuristic labels, not a mathematical security guarantee.
+    if not password or length < 8 or lower in COMMON_PASSWORDS:
+        rating = "WEAK INDICATORS"
+        rating_color = UI.RED
+    elif (
+        length >= 16
+        and passed >= 5
+        and not warnings
+    ):
+        rating = "GOOD BASIC INDICATORS"
+        rating_color = UI.GREEN
+    else:
+        rating = "NEEDS REVIEW"
+        rating_color = UI.YELLOW
+
+    if not warnings:
+        warnings.append(
+            "No obvious weak patterns were found by these checks."
+        )
+
+    if not recommendations:
+        recommendations.append(
+            "Use a unique password or passphrase for every account."
+        )
+
+    return {
+        "length": length,
+        "checks": checks,
+        "warnings": warnings,
+        "recommendations": recommendations,
+        "rating": rating,
+        "rating_color": rating_color,
+        "timestamp": datetime.now().astimezone().isoformat(
+            timespec="seconds"
+        ),
+    }
+
+
+# ---------- REPORT DISPLAY ----------
+
+def show_report(result):
+    print()
+    line()
+    print(UI.paint(" SECURITY ANALYSIS REPORT", UI.BOLD + UI.CYAN))
+    line("-")
+
+    print("Length:", result["length"], "characters")
+    print("\nBASIC CHECKS")
+
+    for label, passed in result["checks"]:
+        status = "PASS" if passed else "CHECK"
+        color = UI.GREEN if passed else UI.YELLOW
+        print(UI.paint("[" + status + "]", color), label)
+
+    print("\nASSESSMENT")
+    print(UI.paint(
+        result["rating"],
+        UI.BOLD + result["rating_color"]
+    ))
+
+    print("\nOBSERVATIONS")
+    for item in result["warnings"]:
+        print("- " + item)
+
+    print("\nRECOMMENDATIONS")
+    for item in result["recommendations"]:
+        print("- " + item)
+
+    line()
+    print(UI.paint(
+        "This heuristic cannot guarantee password security.",
+        UI.YELLOW
+    ))
+
+
+# ---------- REPORT EXPORT ----------
+
+def export_report(result):
+    print("\n" + UI.paint("REPORT EXPORT", UI.BOLD + UI.CYAN))
+    print("The report will NOT contain the password.")
+
+    filename = input(
+        "Filename [psc_report.txt]: "
+    ).strip()
+
+    if not filename:
+        filename = "psc_report.txt"
+
+    if not filename.lower().endswith(".txt"):
+        filename += ".txt"
+
+    # Permit a plain filename only.
+    if (
+        os.path.basename(filename) != filename
+        or filename in (".", "..")
+        or "\x00" in filename
+    ):
+        print(UI.paint(
+            "Invalid filename. Do not include folder paths.",
+            UI.RED
+        ))
+        return
+
+    if os.path.exists(filename):
+        print(UI.paint("File already exists.", UI.YELLOW))
+        answer = input("Overwrite? (y/n): ").strip().lower()
+        if answer != "y":
+            print("Export cancelled.")
+            return
+
+    lines = [
+        APP_NAME,
+        "Version: " + VERSION,
+        "Generated: " + result["timestamp"],
+        "Password contents: NOT INCLUDED",
+        "",
+        "Length: " + str(result["length"]),
+        "Assessment: " + result["rating"],
+        "",
+        "BASIC CHECKS",
+    ]
+
+    for label, passed in result["checks"]:
+        status = "PASS" if passed else "CHECK"
+        lines.append(status + " - " + label)
+
+    lines.extend(["", "OBSERVATIONS"])
+    lines.extend("- " + item for item in result["warnings"])
+    lines.extend(["", "RECOMMENDATIONS"])
+    lines.extend("- " + item for item in result["recommendations"])
+    lines.extend([
+        "",
+        "Disclaimer: Educational heuristic only.",
+        "No guarantee of password security.",
+    ])
+
+    try:
+        with open(filename, "w", encoding="utf-8") as file:
+            file.write("\n".join(lines) + "\n")
+
+        print(UI.paint("Report saved: " + filename, UI.GREEN))
+
+    except OSError as error:
+        print(UI.paint("Could not save report: " + str(error), UI.RED))
+
+
+# ---------- SELF-TESTS ----------
+
+def run_tests():
+    print("\n" + UI.paint("PSC SELF-TEST SUITE", UI.BOLD + UI.CYAN))
+    line("-")
+
+    tests = [
+        (
+            "Empty input",
+            lambda: analyze_password("")["length"] == 0
+        ),
+        (
+            "Common password detection",
+            lambda: any(
+                "common-password" in w.lower()
+                or "common password" in w.lower()
+                for w in analyze_password("123456")["warnings"]
+            )
+        ),
+        (
+            "Repeated characters",
+            lambda: any(
+                "repeated" in w.lower()
+                for w in analyze_password("aaaaaa")["warnings"]
+            )
+        ),
+        (
+            "Keyboard sequence",
+            lambda: has_sequence("qwerty123")
+        ),
+        (
+            "Long input length",
+            lambda: analyze_password(
+                "Fictional-Example-Password-987!"
+            )["length"] >= 16
+        ),
+        (
+            "Report excludes password",
+            lambda: (
+                "FICTIONAL_SECRET_987" not in "\n".join(
+                    export_lines_for_test("FICTIONAL_SECRET_987")
+                )
+            )
+        ),
+    ]
+
+    passed = 0
+
+    for label, test in tests:
+        try:
+            success = bool(test())
+        except Exception:
+            success = False
+
+        if success:
+            passed += 1
+            print(UI.paint("[PASS]", UI.GREEN), label)
+        else:
+            print(UI.paint("[FAIL]", UI.RED), label)
+
+    line("-")
+    print(f"Results: {passed}/{len(tests)} passed")
+
+    if passed == len(tests):
+        print(UI.paint("All self-tests passed.", UI.GREEN))
+    else:
+        print(UI.paint(
+            "Some tests failed. Review the code before release.",
+            UI.RED
+        ))
+
+
+def export_lines_for_test(password):
+    """Build report text in memory to test privacy."""
+    result = analyze_password(password)
+    lines = [
+        APP_NAME,
+        "Version: " + VERSION,
+        "Length: " + str(result["length"]),
+        "Assessment: " + result["rating"],
+    ]
+    lines.extend(label for label, _ in result["checks"])
+    lines.extend(result["warnings"])
+    lines.extend(result["recommendations"])
+    return lines
+
+
+# ---------- HELP AND ABOUT ----------
+
+def show_help():
+    print("\n" + UI.paint("HELP & SAFETY", UI.BOLD + UI.CYAN))
+    line("-")
+    print("1. Analyze: inspect a fictional test password.")
+    print("2. Export: save findings without the password.")
+    print("3. Self-tests: check selected detection behaviours.")
+    print("4. About: show tool and Python versions.")
+    print()
+    print("PSC works offline and does not send passwords anywhere.")
+    print("Use fictional examples; terminal input may be visible.")
+    print("A high rating does not prove a password is secure.")
+
+
+def show_about():
+    print("\n" + UI.paint("ABOUT PSC", UI.BOLD + UI.CYAN))
+    line("-")
+    print(APP_NAME)
+    print("Version:", VERSION)
+    print("Python:", platform.python_version())
+    print("Platform:", platform.system())
+    print("Dependencies: Python standard library")
+    print("Mode: Local educational analysis")
+
+
+# ---------- MAIN MENU ----------
+
+def main():
+    UI.setup()
+    banner()
+    last_result = None
+
+    while True:
+        print()
+        print(UI.paint("MAIN MENU", UI.BOLD + UI.WHITE))
+        line("-")
+        print(" [1] Analyze a test password")
+        print(" [2] Export latest report")
+        print(" [3] Run self-tests")
+        print(" [4] Help & safety")
+        print(" [5] About PSC")
+        print(" [6] Exit")
+        line("-")
+
+        choice = input(
+            UI.paint("PSC", UI.CYAN) + " > "
+        ).strip()
+
+        if choice == "1":
+            print(UI.paint(
+                "Use a fictional password, never a real one.",
+                UI.YELLOW
+            ))
+            password = input("Test password: ")
+
+            if len(password) > MAX_LENGTH:
+                print(UI.paint(
+                    f"Input exceeds {MAX_LENGTH} characters.",
+                    UI.RED
+                ))
+                del password
+                continue
+
+            if not password:
+                print(UI.paint("Input cannot be empty.", UI.RED))
+                del password
+                continue
+
+            last_result = analyze_password(password)
+            del password
+            show_report(last_result)
+
+        elif choice == "2":
+            if last_result is None:
+                print(UI.paint(
+                    "Analyze a test password first.",
+                    UI.YELLOW
+                ))
+            else:
+                export_report(last_result)
+
+        elif choice == "3":
+            run_tests()
+
+        elif choice == "4":
+            show_help()
+
+        elif choice == "5":
+            show_about()
+
+        elif choice == "6":
+            print(UI.paint(
+                "PSC closed. Stay secure!",
+                UI.GREEN
+            ))
+            break
+
+        else:
+            print(UI.paint(
+                "Invalid option. Choose 1-6.",
+                UI.RED
+            ))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (KeyboardInterrupt, EOFError):
+        print("\nPSC closed.")
+    except Exception as error:
+        print(UI.paint(
+            "Unexpected error: " + str(error),
+            UI.RED
+        ))
